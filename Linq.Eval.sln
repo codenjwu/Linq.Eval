@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32505.173
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linq.Eval", "Linq.Eval\Linq.Eval.csproj", "{B2DEADE1-9BD0-481F-8EF2-4AD104C17737}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linq.Eval.Test", "Linq.Eval.Test\Linq.Eval.Test.csproj", "{38261B1C-83D4-4EB4-9F46-3789A41B1218}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B2DEADE1-9BD0-481F-8EF2-4AD104C17737}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2DEADE1-9BD0-481F-8EF2-4AD104C17737}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2DEADE1-9BD0-481F-8EF2-4AD104C17737}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2DEADE1-9BD0-481F-8EF2-4AD104C17737}.Release|Any CPU.Build.0 = Release|Any CPU
+		{38261B1C-83D4-4EB4-9F46-3789A41B1218}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38261B1C-83D4-4EB4-9F46-3789A41B1218}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38261B1C-83D4-4EB4-9F46-3789A41B1218}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38261B1C-83D4-4EB4-9F46-3789A41B1218}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {362D30BE-12EA-4F25-857A-AC5B200D05B2}
+	EndGlobalSection
+EndGlobal
