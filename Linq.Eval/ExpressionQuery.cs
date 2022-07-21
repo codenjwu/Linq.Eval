@@ -8,7 +8,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Linq.Eval
+namespace LinVal
 {
     public static class ExpressionQuery
     {
@@ -78,6 +78,10 @@ namespace Linq.Eval
                     return ConcatBody(body as IdentifierNameSyntax, pars);
                 case nameof(ConditionalExpressionSyntax):
                     return ConcatBody(body as ConditionalExpressionSyntax, pars);
+                case nameof(MemberBindingExpressionSyntax):
+                    return ConcatBody(body as MemberBindingExpressionSyntax, pars);
+                case nameof(InvocationExpressionSyntax):
+                    throw new NotImplementedException();
                 default:
                     throw new NotImplementedException();
             }
@@ -164,9 +168,9 @@ namespace Linq.Eval
             switch (body.Kind())
             {
                 case SyntaxKind.PostIncrementExpression:
-                    return Expression.PostIncrementAssign(Dispatcher(body.Operand));
+                    return Expression.PostIncrementAssign(Dispatcher(body.Operand, pars));
                 case SyntaxKind.PostDecrementExpression:
-                    return Expression.PostDecrementAssign(Dispatcher(body.Operand));
+                    return Expression.PostDecrementAssign(Dispatcher(body.Operand, pars));
                 default:
                     throw new NotImplementedException();
             }
@@ -225,13 +229,30 @@ namespace Linq.Eval
         static Expression? ConcatBody(ConditionalAccessExpressionSyntax body, ParameterExpression[] pars = null)
         {
             var id = Dispatcher(body.Expression, pars);
-            return Expression.Condition(Expression.Equal(id, Expression.Constant(null)), Dispatcher(body.WhenNotNull), Expression.Convert(Expression.Constant(null), id.Type));
+            return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), Dispatcher(body.WhenNotNull, pars), Expression.Constant(null, id.Type));
+            //return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), Dispatcher(body.WhenNotNull,pars), Expression.Convert(Expression.Constant(null), id.Type));
         }
         static Expression? ConcatBody(IdentifierNameSyntax body, ParameterExpression[] pars = null)
             => pars.First(x => x.Name == body.Identifier.Text);
         static Expression? ConcatBody(ConditionalExpressionSyntax body, ParameterExpression[] pars = null)
-            => Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue), Dispatcher(body.WhenFalse));
-
+            => Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
+        static Expression? ConcatBody(MemberBindingExpressionSyntax body, ParameterExpression[] pars = null) //TODO
+        {
+            switch (body.Parent.GetType().Name)
+            {
+               
+                case nameof(ConditionalAccessExpressionSyntax):
+                    return Expression.Property(Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars), body.Name.Identifier.Text);
+                default:
+                    return Expression.Property(Dispatcher(body.Parent as ExpressionSyntax, pars), body.Name.Identifier.Text);
+            }
+            throw new NotImplementedException();
+        }
+        static Expression? ConcatBody(InvocationExpressionSyntax body, ParameterExpression[] pars = null)
+        {
+            //return Expression.MemberBind();
+            throw new NotImplementedException();
+        }
         static (Type[] Pars, Type? Return) TypeConvert<T>()
         {
             var t = typeof(T);
