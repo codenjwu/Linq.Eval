@@ -8,7 +8,7 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace LinVal
+namespace Linq.Eval
 {
     public static class ExpressionQuery
     {
@@ -229,8 +229,8 @@ namespace LinVal
         static Expression? ConcatBody(ConditionalAccessExpressionSyntax body, ParameterExpression[] pars = null)
         {
             var id = Dispatcher(body.Expression, pars);
-            return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), Dispatcher(body.WhenNotNull, pars), Expression.Constant(null, id.Type));
-            //return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), Dispatcher(body.WhenNotNull,pars), Expression.Convert(Expression.Constant(null), id.Type));
+            var notNull = Dispatcher(body.WhenNotNull, pars);
+            return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), notNull, Expression.Constant(null, notNull.Type));
         }
         static Expression? ConcatBody(IdentifierNameSyntax body, ParameterExpression[] pars = null)
             => pars.First(x => x.Name == body.Identifier.Text);
@@ -240,13 +240,21 @@ namespace LinVal
         {
             switch (body.Parent.GetType().Name)
             {
-               
+                //    //case nameof(SimpleLambdaExpressionSyntax):
+                //    //    return Expression.Property((Dispatcher());
+                //    //case nameof(ParenthesizedExpressionSyntax):
+                //    //    return Expression.Property((Dispatcher(().Expression, pars) as MemberExpression).Member,);
+                //    //case nameof(ConditionalAccessExpressionSyntax):
+                //    //    return Expression.Property((Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars));
+                //    case nameof(IdentifierNameSyntax):
                 case nameof(ConditionalAccessExpressionSyntax):
-                    return Expression.Property(Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars), body.Name.Identifier.Text);
+                    var pp = Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars);
+                    return Expression.Property(pp, body.Name.Identifier.Text);
                 default:
                     return Expression.Property(Dispatcher(body.Parent as ExpressionSyntax, pars), body.Name.Identifier.Text);
             }
-            throw new NotImplementedException();
+
+            //throw new NotImplementedException();
         }
         static Expression? ConcatBody(InvocationExpressionSyntax body, ParameterExpression[] pars = null)
         {
