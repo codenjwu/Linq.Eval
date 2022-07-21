@@ -23,6 +23,26 @@ namespace Linq.Eval.Test
             };
         }
 
+        [TestMethod]
+        public async Task TestDelegate()
+        {
+            // where
+
+            var s = Students.Where(await "x=>x.FirstName == \"sf1\" && t.Teacher.Age > 35".ToDelegate<Func<Student, bool>>()).ToArray();
+            Assert.IsTrue(s.Any());
+
+            // select
+
+
+            // order by
+
+
+            // then by
+
+            // all
+
+            // any
+        }
 
     }
 }
