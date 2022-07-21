@@ -15,7 +15,7 @@ namespace Linq.Eval
         {
             var scriptOptions = ScriptOptions.Default;
 
-            var asms = AppDomain.CurrentDomain.GetAssemblies();
+            var asms = AppDomain.CurrentDomain.GetAssemblies().Where(x => !x.IsDynamic);
             foreach (Assembly asm in asms)
             {
                 scriptOptions = scriptOptions.AddReferences(asm);
@@ -27,7 +27,7 @@ namespace Linq.Eval
         });
         public static async Task<T> ToDelegate<T>(this string query, bool? cache = false)
         {
-            
+
 
             T script;
             if (cache.HasValue && cache.Value)
