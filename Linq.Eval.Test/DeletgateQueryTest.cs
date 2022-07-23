@@ -28,7 +28,7 @@ namespace Linq.Eval.Test
         {
             // where
 
-            var s = Students.Where(await "x=>x.FirstName == \"sf1\" && t.Teacher.Age > 35".ToDelegate<Func<Student, bool>>()).ToArray();
+            var s = Students.Where(await "x=>x.FirstName == \"sf1\" && x.Teacher.Age > 35".ToDelegate<Func<Student, bool>>()).ToArray();
             Assert.IsTrue(s.Any());
 
             // select

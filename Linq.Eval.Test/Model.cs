@@ -10,10 +10,10 @@ namespace Linq.Eval.Test
     {
         public string FirstName { get; set; }
         public string LastName { get; set; }
-        public int Age { get; set; }
+        public int? Age { get; set; }
         public int WorkHours { get; set; }
-        public double Salary { get; set; }
-        public bool IsPrinciple { get; set; }
+        public double? Salary { get; set; }
+        public bool? IsPrinciple { get; set; }
         public Student[] Students { get; set; }
     }
     internal class Student
