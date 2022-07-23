@@ -53,6 +53,11 @@ namespace Linq.Eval.Test
             var tc2 = Students2.Where("x=>(x.FirstName == (\"s\"+\"f1\") || (x.Teacher?.Age??100 )> 35) && !(x.Teacher?.IsPrinciple??true)  || (x.Age == (x.Teacher?.Age??20) )".ToExpression<Func<Student, bool>>().Compile()).ToArray();
 
             var tc3 = Students3.Select("x=>x.Teacher?.Age".ToExpression<Func<Student,int?>>().Compile()).ToArray();
+            
+            var tc4 = Teachers.Where("x=>x.Students[1].Age > 20 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
+
+            var tc5 = Teachers.Where("x=>x.Students?[1].Age > 20 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
+             
         }
     }
 }

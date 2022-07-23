@@ -84,6 +84,8 @@ namespace Linq.Eval
                     throw new NotImplementedException();
                 case nameof(CastExpressionSyntax):
                     return ConcatBody(body as CastExpressionSyntax, pars);
+                case nameof(ElementBindingExpressionSyntax):
+                    throw new NotImplementedException();
                 default:
                     throw new NotImplementedException();
             }
@@ -163,12 +165,15 @@ namespace Linq.Eval
                 case SyntaxKind.GreaterThanOrEqualExpression:
                     return Expression.GreaterThanOrEqual(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
                 case SyntaxKind.CoalesceExpression:
-                    return Expression.Coalesce(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var left_coalesce = Dispatcher(body.Left, pars);
+                    var right_coalesce = Dispatcher(body.Right, pars);
+                    return Expression.Coalesce(left_coalesce, right_coalesce);
                 case SyntaxKind.AsExpression:
                     //Expression.Convert();
+                    throw new NotImplementedException();// TODO deep type
                     switch (body.Right.Kind())
                     {
-                        case SyntaxKind.IdentifierName: // TODO deep type
+                        case SyntaxKind.IdentifierName:
                             //var r = (body.Right as IdentifierNameSyntax).Identifier.Text;
                             //var ty = pars.FirstOrDefault(x => x.Type.Name == r)?.Type;
                             //return ty != null 
@@ -254,7 +259,6 @@ namespace Linq.Eval
         }
         static Expression? ConcatBody(ConditionalAccessExpressionSyntax body, ParameterExpression[] pars = null, Expression? member = null)
         {
-
             //switch (body.WhenNotNull.Kind())
             //{
             //    case SyntaxKind.MemberBindingExpression:
@@ -296,6 +300,8 @@ namespace Linq.Eval
             Expression? notNull;
             if (body.WhenNotNull is MemberBindingExpressionSyntax memberbinding)
                 notNull = Expression.Property(member, memberbinding.Name.Identifier.Text);
+            else if (body.WhenNotNull is MemberAccessExpressionSyntax memberaccess && memberaccess.Expression is ElementBindingExpressionSyntax elementbinding)
+                notNull = Expression.ArrayAccess(member, Dispatcher(elementbinding.ArgumentList.Arguments[0].Expression, pars));
             else
                 notNull = Dispatcher(body.WhenNotNull, pars, member: member);
 
@@ -303,7 +309,7 @@ namespace Linq.Eval
             //var rt =  Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), notNull, Expression.Constant(null, notNull.Type));
             if (!notNull.Type.IsClass && !notNull.Type.Name.StartsWith("Nullable", StringComparison.OrdinalIgnoreCase))
             {
-                if (ToNullableAliases.TryGetValue(notNull.Type, out Type ty_null))
+                if (ToNullable.TryGetValue(notNull.Type, out Type ty_null))
                     return Expression.Condition(Expression.Equal(member, Expression.Constant(null, member.Type)), Expression.Constant(null, ty_null), Expression.Convert(notNull, ty_null));
                 else
                     throw new NotImplementedException();
@@ -315,31 +321,35 @@ namespace Linq.Eval
         static Expression? ConcatBody(IdentifierNameSyntax body, ParameterExpression[] pars = null)
             => pars.First(x => x.Name == body.Identifier.Text);
         static Expression? ConcatBody(ConditionalExpressionSyntax body, ParameterExpression[] pars = null)
-        => Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
+        {
+
+            return Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
+
+            // TODO convert nullable or not???
+
+            //var condition = Dispatcher(body.Condition, pars);
+            //var whentrue = Dispatcher(body.WhenTrue, pars);
+            //var whenfalse = Dispatcher(body.WhenFalse, pars);
+            //if (whenfalse.Type != whentrue.Type)
+            //{
+            //    if (!whenfalse.Type.IsClass && whenfalse.Type.Name.StartsWith("Nullable", StringComparison.OrdinalIgnoreCase))
+            //    {
+            //        whenfalse = Expression.Convert(whenfalse, NullableToAliases.TryGetValue(whenfalse.Type, out Type conv) ? conv : throw new NotImplementedException());
+            //    }
+            //    else if (!whentrue.Type.IsClass && whentrue.Type.Name.StartsWith("Nullable", StringComparison.OrdinalIgnoreCase))
+            //    {
+            //        whentrue = Expression.Convert(whentrue, NullableToAliases.TryGetValue(whentrue.Type, out Type conv) ? conv : throw new NotImplementedException());
+            //    }
+            //    else
+            //    {
+            //        throw new NotImplementedException();
+            //    }
+            //}
+            //return Expression.Condition(condition, whentrue, whenfalse);
+        }
         static Expression? ConcatBody(MemberBindingExpressionSyntax body, ParameterExpression[] pars = null, Expression? Member = null) //TODO
         {
             throw new NotImplementedException();
-            //switch (body.Parent.GetType().Name)
-            //{
-            //    case nameof(ConditionalAccessExpressionSyntax):
-            //        //if((body.Parent as ConditionalAccessExpressionSyntax).Expression is MemberBindingExpressionSyntax memberAccess)
-            //        //{
-            //        //    var pp = Dispatcher((body.Parent.Parent as ConditionalAccessExpressionSyntax).Expression as MemberAccessExpressionSyntax, pars);
-            //        //    return Expression.Property(pp, body.Name.Identifier.Text);
-            //        //}
-            //        if ((body.Parent as ConditionalAccessExpressionSyntax).Expression is MemberBindingExpressionSyntax memberAccess)
-            //        {
-            //            throw new NotImplementedException();
-            //        }
-            //        else
-            //        {
-            //            var pp = Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars);
-            //            return Expression.Property(pp, body.Name.Identifier.Text);
-            //        }
-
-            //    default:
-            //        return Expression.Property(Dispatcher(body.Parent as ExpressionSyntax, pars), body.Name.Identifier.Text);
-            //}
         }
         static Expression? ConcatBody(CastExpressionSyntax body, ParameterExpression[] pars = null)
         {
@@ -418,7 +428,7 @@ namespace Linq.Eval
            {"bool?" ,typeof(Nullable<bool>)   }   ,
            {"char?", typeof(Nullable<char>) }
         };
-        static readonly Dictionary<Type, Type> ToNullableAliases = new Dictionary<Type, Type>
+        static readonly Dictionary<Type, Type> ToNullable = new Dictionary<Type, Type>
         {
             {typeof(byte) ,typeof(Nullable<byte>)     }   ,
            {typeof(sbyte) ,typeof(Nullable<sbyte>)    }   ,
@@ -433,6 +443,22 @@ namespace Linq.Eval
            {typeof(decimal) ,typeof(Nullable<decimal>)    }   ,
            {typeof(bool),typeof(Nullable<bool>)   }   ,
            {typeof(char), typeof(Nullable<char>) }
+        };
+        static readonly Dictionary<Type, Type> NullableToNonNullable = new Dictionary<Type, Type>
+        {
+           {typeof(Nullable<byte>)   ,typeof(byte)  }   ,
+           {typeof(Nullable<sbyte>)  ,typeof(sbyte)    }   ,
+           {typeof(Nullable<short>)  ,typeof(short)   }   ,
+           {typeof(Nullable<ushort>) ,typeof(ushort)    }   ,
+           {typeof(Nullable<int>)    ,typeof(int)    }   ,
+           {typeof(Nullable<uint>)   ,typeof(uint)   }   ,
+           {typeof(Nullable<long>)   ,typeof(long)   }   ,
+           {typeof(Nullable<ulong>)  ,typeof(ulong)   }   ,
+           {typeof(Nullable<float>)  ,typeof(float)   }   ,
+           {typeof(Nullable<double>) ,typeof(double)  }   ,
+           {typeof(Nullable<decimal>),typeof(decimal)   }   ,
+           {typeof(Nullable<bool>)   ,typeof(bool)   }   ,
+           {typeof(Nullable<char>)   ,typeof(char)    }
         };
     }
 }
