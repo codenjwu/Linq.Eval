@@ -52,14 +52,14 @@ namespace Linq.Eval
         static ParameterExpression[] ConvertToParameterExpression(ParameterListSyntax pars, params Type[] type)
             => pars.Parameters.Select((x, i) => Expression.Parameter(type[i], x.Identifier.ValueText)).ToArray();
 
-        static Expression? Dispatcher(CSharpSyntaxNode body, ParameterExpression[] pars = null)
+        static Expression? Dispatcher(CSharpSyntaxNode body, ParameterExpression[] pars = null, bool isMethodCall = false, ArgumentListSyntax args = null, Expression? member = null)
         {
             switch (body.GetType().Name)
             {
                 case nameof(LiteralExpressionSyntax):
                     return ConcatBody(body as LiteralExpressionSyntax);
                 case nameof(MemberAccessExpressionSyntax):
-                    return ConcatBody(body as MemberAccessExpressionSyntax, pars);
+                    return ConcatBody(body as MemberAccessExpressionSyntax, pars, isMethodCall, args);
                 case nameof(BinaryExpressionSyntax):
                     return ConcatBody(body as BinaryExpressionSyntax, pars);
                 case nameof(PostfixUnaryExpressionSyntax):
@@ -67,21 +67,23 @@ namespace Linq.Eval
                 case nameof(PrefixUnaryExpressionSyntax):
                     return ConcatBody(body as PrefixUnaryExpressionSyntax, pars);
                 case nameof(ParenthesizedExpressionSyntax):
-                    return ConcatBody(body as ParenthesizedExpressionSyntax, pars);
+                    return ConcatBody(body as ParenthesizedExpressionSyntax, pars, isMethodCall, args, member);
                 case nameof(ElementAccessExpressionSyntax):
                     return ConcatBody(body as ElementAccessExpressionSyntax, pars);
                 case nameof(AssignmentExpressionSyntax):
                     return ConcatBody(body as AssignmentExpressionSyntax, pars);
                 case nameof(ConditionalAccessExpressionSyntax):
-                    return ConcatBody(body as ConditionalAccessExpressionSyntax, pars);
+                    return ConcatBody(body as ConditionalAccessExpressionSyntax, pars, member: member);
                 case nameof(IdentifierNameSyntax):
                     return ConcatBody(body as IdentifierNameSyntax, pars);
                 case nameof(ConditionalExpressionSyntax):
                     return ConcatBody(body as ConditionalExpressionSyntax, pars);
                 case nameof(MemberBindingExpressionSyntax):
-                    return ConcatBody(body as MemberBindingExpressionSyntax, pars);
+                    return ConcatBody(body as MemberBindingExpressionSyntax, pars, member);
                 case nameof(InvocationExpressionSyntax):
                     throw new NotImplementedException();
+                case nameof(CastExpressionSyntax):
+                    return ConcatBody(body as CastExpressionSyntax, pars);
                 default:
                     throw new NotImplementedException();
             }
@@ -112,8 +114,12 @@ namespace Linq.Eval
             }
             throw new NotImplementedException();
         }
-        static Expression? ConcatBody(MemberAccessExpressionSyntax body, ParameterExpression[] pars = null)
-            => Expression.Property(Dispatcher(body.Expression, pars), body.Name.Identifier.Text);
+        static Expression? ConcatBody(MemberAccessExpressionSyntax body, ParameterExpression[] pars = null, bool isMethod = false, ArgumentListSyntax args = null)
+         => !isMethod ? Expression.Property(Dispatcher(body.Expression, pars), body.Name.Identifier.Text) : GetMethodExpression(body, pars, isMethod, args);
+        static Expression? GetMethodExpression(MemberAccessExpressionSyntax body, ParameterExpression[] pars = null, bool isMethod = false, ArgumentListSyntax args = null)
+        {
+            throw new NotImplementedException();
+        }
         static Expression? ConcatBody(BinaryExpressionSyntax body, ParameterExpression[] pars = null)
         {
             switch (body.Kind())
@@ -158,8 +164,28 @@ namespace Linq.Eval
                     return Expression.GreaterThanOrEqual(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
                 case SyntaxKind.CoalesceExpression:
                     return Expression.Coalesce(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                case SyntaxKind.AsExpression:
+                    //Expression.Convert();
+                    switch (body.Right.Kind())
+                    {
+                        case SyntaxKind.IdentifierName: // TODO deep type
+                            //var r = (body.Right as IdentifierNameSyntax).Identifier.Text;
+                            //var ty = pars.FirstOrDefault(x => x.Type.Name == r)?.Type;
+                            //return ty != null 
+                            //    ? Expression.Convert(Dispatcher(body.Left, pars), ty) 
+                            //    : throw new NotImplementedException();
+                            throw new NotImplementedException();
+                        case SyntaxKind.PredefinedType:
+                            return Aliases.TryGetValue((body.Right as PredefinedTypeSyntax).Keyword.Text, out Type tp)
+                                ? Expression.Convert(Dispatcher(body.Left, pars), tp)
+                                : throw new NotImplementedException();
+                        default:
+                            throw new NotImplementedException();
+                    }
+                    throw new NotImplementedException();
+                //return Expression.Coalesce(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
                 default:
-                    break;
+                    throw new NotImplementedException();
             }
             throw new NotImplementedException();
         }
@@ -187,8 +213,8 @@ namespace Linq.Eval
             }
             throw new NotImplementedException();
         }
-        static Expression? ConcatBody(ParenthesizedExpressionSyntax body, ParameterExpression[] pars = null)
-            => Dispatcher(body.Expression, pars);
+        static Expression? ConcatBody(ParenthesizedExpressionSyntax body, ParameterExpression[] pars = null, bool isMethodCall = false, ArgumentListSyntax args = null, Expression? member = null)
+            => Dispatcher(body.Expression, pars, isMethodCall, args, member);
         static Expression? ConcatBody(ElementAccessExpressionSyntax body, ParameterExpression[] pars = null)
             => Expression.ArrayAccess(Dispatcher(body.Expression, pars), Dispatcher(body.ArgumentList.Arguments[0].Expression, pars));
         static Expression? ConcatBody(AssignmentExpressionSyntax body, ParameterExpression[] pars = null)
@@ -226,40 +252,121 @@ namespace Linq.Eval
             }
             throw new NotImplementedException();
         }
-        static Expression? ConcatBody(ConditionalAccessExpressionSyntax body, ParameterExpression[] pars = null)
+        static Expression? ConcatBody(ConditionalAccessExpressionSyntax body, ParameterExpression[] pars = null, Expression? member = null)
         {
-            var id = Dispatcher(body.Expression, pars);
-            var notNull = Dispatcher(body.WhenNotNull, pars);
-            return Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), notNull, Expression.Constant(null, notNull.Type));
+
+            //switch (body.WhenNotNull.Kind())
+            //{
+            //    case SyntaxKind.MemberBindingExpression:
+            //        if (member == null)
+            //            member = Dispatcher(body.Expression, pars);
+            //        else
+            //            member = Expression.Property(member, (body.WhenNotNull as MemberBindingExpressionSyntax).Name.Identifier.Text);
+            //        break;
+            //    case SyntaxKind.ConditionalAccessExpression:
+            //        if(member == null)
+            //            member = Dispatcher(body.Expression, pars);
+            //        else
+            //            member = Expression.Property(member, Dispatcher());
+            //        break;
+            //    default:
+            //        throw new NotImplementedException();
+            //}
+            switch (body.Expression.Kind())
+            {
+                case SyntaxKind.IdentifierName:
+                case SyntaxKind.SimpleMemberAccessExpression:
+                    member = Dispatcher(body.Expression, pars);
+                    break;
+                case SyntaxKind.MemberBindingExpression:
+                    if (member == null)
+                        member = Dispatcher(body.Expression, pars);
+                    else
+                        member = Expression.Property(member, (body.Expression as MemberBindingExpressionSyntax).Name.Identifier.Text);
+                    break;
+                //case SyntaxKind.ConditionalAccessExpression:
+                //    member = Expression.Property(member, ((body.Expression as ConditionalAccessExpressionSyntax).Expression as MemberBindingExpressionSyntax).Name.Identifier.Text);
+                //    break;
+                default:
+                    throw new NotImplementedException();
+            }
+
+            //else
+            //member = Expression.Property(member, (body.Expression as MemberBindingExpressionSyntax).Name.Identifier.Text);
+            Expression? notNull;
+            if (body.WhenNotNull is MemberBindingExpressionSyntax memberbinding)
+                notNull = Expression.Property(member, memberbinding.Name.Identifier.Text);
+            else
+                notNull = Dispatcher(body.WhenNotNull, pars, member: member);
+
+            //var t = Expression.Equal(id, Expression.Constant(null, id.Type));
+            //var rt =  Expression.Condition(Expression.Equal(id, Expression.Constant(null, id.Type)), notNull, Expression.Constant(null, notNull.Type));
+            if (!notNull.Type.IsClass && !notNull.Type.Name.StartsWith("Nullable", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ToNullableAliases.TryGetValue(notNull.Type, out Type ty_null))
+                    return Expression.Condition(Expression.Equal(member, Expression.Constant(null, member.Type)), Expression.Constant(null, ty_null), Expression.Convert(notNull, ty_null));
+                else
+                    throw new NotImplementedException();
+            }
+
+            else
+                return Expression.Condition(Expression.Equal(member, Expression.Constant(null, member.Type)), Expression.Constant(null, notNull.Type), notNull);
         }
         static Expression? ConcatBody(IdentifierNameSyntax body, ParameterExpression[] pars = null)
             => pars.First(x => x.Name == body.Identifier.Text);
         static Expression? ConcatBody(ConditionalExpressionSyntax body, ParameterExpression[] pars = null)
-            => Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
-        static Expression? ConcatBody(MemberBindingExpressionSyntax body, ParameterExpression[] pars = null) //TODO
+        => Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
+        static Expression? ConcatBody(MemberBindingExpressionSyntax body, ParameterExpression[] pars = null, Expression? Member = null) //TODO
         {
-            switch (body.Parent.GetType().Name)
+            throw new NotImplementedException();
+            //switch (body.Parent.GetType().Name)
+            //{
+            //    case nameof(ConditionalAccessExpressionSyntax):
+            //        //if((body.Parent as ConditionalAccessExpressionSyntax).Expression is MemberBindingExpressionSyntax memberAccess)
+            //        //{
+            //        //    var pp = Dispatcher((body.Parent.Parent as ConditionalAccessExpressionSyntax).Expression as MemberAccessExpressionSyntax, pars);
+            //        //    return Expression.Property(pp, body.Name.Identifier.Text);
+            //        //}
+            //        if ((body.Parent as ConditionalAccessExpressionSyntax).Expression is MemberBindingExpressionSyntax memberAccess)
+            //        {
+            //            throw new NotImplementedException();
+            //        }
+            //        else
+            //        {
+            //            var pp = Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars);
+            //            return Expression.Property(pp, body.Name.Identifier.Text);
+            //        }
+
+            //    default:
+            //        return Expression.Property(Dispatcher(body.Parent as ExpressionSyntax, pars), body.Name.Identifier.Text);
+            //}
+        }
+        static Expression? ConcatBody(CastExpressionSyntax body, ParameterExpression[] pars = null)
+        {
+            switch (body.Type.Kind())
             {
-                //    //case nameof(SimpleLambdaExpressionSyntax):
-                //    //    return Expression.Property((Dispatcher());
-                //    //case nameof(ParenthesizedExpressionSyntax):
-                //    //    return Expression.Property((Dispatcher(().Expression, pars) as MemberExpression).Member,);
-                //    //case nameof(ConditionalAccessExpressionSyntax):
-                //    //    return Expression.Property((Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars));
-                //    case nameof(IdentifierNameSyntax):
-                case nameof(ConditionalAccessExpressionSyntax):
-                    var pp = Dispatcher((body.Parent as ConditionalAccessExpressionSyntax).Expression, pars);
-                    return Expression.Property(pp, body.Name.Identifier.Text);
+                case SyntaxKind.IdentifierName: // TODO deep type
+                    //var r = (body.Type as IdentifierNameSyntax).Identifier.Text;
+                    //var ty = pars.FirstOrDefault(x => x.Type.Name == r)?.Type;
+                    //return ty != null
+                    //     ? Expression.Convert(Dispatcher(body.Expression, pars), ty)
+                    //    : throw new NotImplementedException();
+                    throw new NotImplementedException();
+                case SyntaxKind.PredefinedType:
+                    return Aliases.TryGetValue((body.Type as PredefinedTypeSyntax).Keyword.Text, out Type tp)
+                        ? Expression.Convert(Dispatcher(body.Expression, pars), tp)
+                        : throw new NotImplementedException();
                 default:
-                    return Expression.Property(Dispatcher(body.Parent as ExpressionSyntax, pars), body.Name.Identifier.Text);
+                    throw new NotImplementedException();
             }
 
-            //throw new NotImplementedException();
+            throw new NotImplementedException();
         }
         static Expression? ConcatBody(InvocationExpressionSyntax body, ParameterExpression[] pars = null)
         {
-            //return Expression.MemberBind();
-            throw new NotImplementedException();
+            //return ConcatBody(body.Expression as MemberAccessExpressionSyntax, pars, true, body.ArgumentList);
+            //throw new NotImplementedException();
+            return Dispatcher(body.Expression, pars, true, body.ArgumentList);
         }
         static (Type[] Pars, Type? Return) TypeConvert<T>()
         {
@@ -278,5 +385,54 @@ namespace Linq.Eval
                 throw new Exception("does not support this type");
             }
         }
+
+        static readonly Dictionary<string, Type> Aliases = new Dictionary<string, Type>()
+        {
+           { "byte" ,typeof(byte) },
+           { "sbyte" ,typeof(sbyte)  }   ,
+           { "short" ,typeof(short)  }   ,
+           { "ushort" ,typeof(ushort)  }   ,
+           { "int" ,typeof(int)  }   ,
+           { "uint" ,typeof(uint)  }   ,
+           { "long" ,typeof(long)   }   ,
+           {  "ulong" ,typeof(ulong)    }   ,
+           { "float" ,typeof(float)    }   ,
+           {  "double" ,typeof(double)   }   ,
+           {  "decimal" ,typeof(decimal)   }   ,
+           {  "object" ,typeof(object)      }   ,
+           { "bool" ,typeof(bool)     }   ,
+           { "char" ,typeof(char)     }   ,
+           { "string" ,typeof(string)    }   ,
+           { "void" ,typeof(void)       }   ,
+           {"byte?" ,typeof(Nullable<byte>)     }   ,
+           { "sbyte?" ,typeof(Nullable<sbyte>)    }   ,
+           {"short?" ,typeof(Nullable<short>)    }   ,
+           {"ushort?" ,typeof(Nullable<ushort>)    }   ,
+           {"int?" ,typeof(Nullable<int>)     }   ,
+           {"uint?" ,typeof(Nullable<uint>)     }   ,
+           {"long?" ,typeof(Nullable<long>)    }   ,
+           {"ulong?" ,typeof(Nullable<ulong>)    }   ,
+           {"float?" ,typeof(Nullable<float>)   }   ,
+           {"double?" ,typeof(Nullable<double>)  }   ,
+           { "decimal?" ,typeof(Nullable<decimal>)    }   ,
+           {"bool?" ,typeof(Nullable<bool>)   }   ,
+           {"char?", typeof(Nullable<char>) }
+        };
+        static readonly Dictionary<Type, Type> ToNullableAliases = new Dictionary<Type, Type>
+        {
+            {typeof(byte) ,typeof(Nullable<byte>)     }   ,
+           {typeof(sbyte) ,typeof(Nullable<sbyte>)    }   ,
+           {typeof(short) ,typeof(Nullable<short>)    }   ,
+           {typeof(ushort) ,typeof(Nullable<ushort>)    }   ,
+           {typeof(int) ,typeof(Nullable<int>)     }   ,
+           {typeof(uint) ,typeof(Nullable<uint>)     }   ,
+           {typeof(long) ,typeof(Nullable<long>)    }   ,
+           {typeof(ulong) ,typeof(Nullable<ulong>)    }   ,
+           {typeof(float) ,typeof(Nullable<float>)   }   ,
+           {typeof(double) ,typeof(Nullable<double>)  }   ,
+           {typeof(decimal) ,typeof(Nullable<decimal>)    }   ,
+           {typeof(bool),typeof(Nullable<bool>)   }   ,
+           {typeof(char), typeof(Nullable<char>) }
+        };
     }
 }

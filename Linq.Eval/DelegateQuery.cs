@@ -27,8 +27,6 @@ namespace Linq.Eval
         });
         public static async Task<T> ToDelegate<T>(this string query, bool? cache = false)
         {
-
-
             T script;
             if (cache.HasValue && cache.Value)
             {
