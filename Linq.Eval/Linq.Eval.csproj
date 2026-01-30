@@ -4,9 +4,10 @@
     <TargetFrameworks>net6.0;net7.0;net8.0;net9.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.0.0</Version>
-    <Description>Write Linq With Eval - Convert string expressions to LINQ expressions dynamically</Description>
+    <Version>1.1.0</Version>
+    <Description>Write Linq With Eval - Convert string expressions to LINQ expressions dynamically. Supports nullable types, complex expressions, two-parameter lambdas, and comprehensive string operations.</Description>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageReleaseNotes>v1.1.0: Enhanced nullable type support, fixed 200+ edge cases, added comprehensive test coverage (970+ tests). Improved handling of complex arithmetic, logical operations, and type conversions in Expression Trees.</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Authors>codenjwu</Authors>
     <PackageProjectUrl>https://github.com/codenjwu/Linq.Eval</PackageProjectUrl>
