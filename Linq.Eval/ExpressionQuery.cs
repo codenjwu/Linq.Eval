@@ -10,16 +10,42 @@ using System.Threading.Tasks;
 
 namespace Linq.Eval
 {
+    /// <summary>
+    /// Provides extension methods for converting string queries to LINQ Expression Trees.
+    /// This enables dynamic query construction and compilation with full type safety.
+    /// </summary>
     public static class ExpressionQuery
     {
         static CSharpParseOptions ParseOptions = CSharpParseOptions.Default.WithKind(SourceCodeKind.Script);
 
+        /// <summary>
+        /// Converts a string query into a strongly-typed LINQ Expression.
+        /// </summary>
+        /// <typeparam name="T">The delegate type of the expression (e.g., Func&lt;Student, bool&gt;).</typeparam>
+        /// <param name="query">The string query to parse (e.g., "x => x.Age > 18").</param>
+        /// <returns>An Expression&lt;T&gt; that can be compiled or used in LINQ providers.</returns>
+        /// <exception cref="Exception">Thrown when the syntax is not supported.</exception>
+        /// <exception cref="NotImplementedException">Thrown when encountering unsupported syntax constructs.</exception>
+        /// <example>
+        /// <code>
+        /// var expr = "x => x.Age > 18".ToExpression&lt;Func&lt;Student, bool&gt;&gt;();
+        /// var compiled = expr.Compile();
+        /// var results = students.Where(compiled);
+        /// </code>
+        /// </example>
         public static Expression<T> ToExpression<T>(this string query)
         {
             var ts = TypeConvert<T>();
             var syntax = ToSyntax(query);
             var pars = ExtractParameter(syntax, ts.Pars);
             var body = Dispatcher(syntax.Body, pars);
+            
+            // Ensure body type matches the return type of the delegate
+            if (body.Type != ts.Return && body.Type == typeof(bool?) && ts.Return == typeof(bool))
+            {
+                // Convert bool? to bool for predicate functions
+                body = Expression.Convert(body, typeof(bool));
+            }
 
             return Expression.Lambda<T>(body, pars);
         }
@@ -102,9 +128,9 @@ namespace Linq.Eval
                 case SyntaxKind.FalseLiteralExpression:
                     return Expression.Constant(false);
                 case SyntaxKind.StringLiteralExpression:
-                    return Expression.Constant(body.Token.Text);
+                    return Expression.Constant(body.Token.ValueText);
                 case SyntaxKind.CharacterLiteralToken:
-                    return Expression.Constant(body.Token.Text.ToCharArray()[0], typeof(char));
+                    return Expression.Constant(body.Token.ValueText.ToCharArray()[0], typeof(char));
                 case SyntaxKind.NumericLiteralExpression:
                     return Expression.Constant(body.Token.Value, body.Token.Value.GetType());
                 case SyntaxKind.NullLiteralExpression:
@@ -153,20 +179,57 @@ namespace Linq.Eval
                 case SyntaxKind.ExclusiveOrExpression:
                     return Expression.ExclusiveOr(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
                 case SyntaxKind.EqualsExpression:
-                    return Expression.Equal(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var eqLeft = Dispatcher(body.Left, pars);
+                    var eqRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref eqLeft, ref eqRight);
+                    return Expression.Equal(eqLeft, eqRight, liftToNull: ShouldLiftToNull(eqLeft, eqRight), method: null);
                 case SyntaxKind.NotEqualsExpression:
-                    return Expression.NotEqual(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var neLeft = Dispatcher(body.Left, pars);
+                    var neRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref neLeft, ref neRight);
+                    return Expression.NotEqual(neLeft, neRight, liftToNull: ShouldLiftToNull(neLeft, neRight), method: null);
                 case SyntaxKind.LessThanExpression:
-                    return Expression.LessThan(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
-                case SyntaxKind.LessThanLessThanEqualsToken:
-                    return Expression.LessThanOrEqual(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var ltLeft = Dispatcher(body.Left, pars);
+                    var ltRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref ltLeft, ref ltRight);
+                    return Expression.LessThan(ltLeft, ltRight, liftToNull: ShouldLiftToNull(ltLeft, ltRight), method: null);
+                case SyntaxKind.LessThanOrEqualExpression:
+                    var leLeft = Dispatcher(body.Left, pars);
+                    var leRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref leLeft, ref leRight);
+                    return Expression.LessThanOrEqual(leLeft, leRight, liftToNull: ShouldLiftToNull(leLeft, leRight), method: null);
                 case SyntaxKind.GreaterThanExpression:
-                    return Expression.GreaterThan(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var gtLeft = Dispatcher(body.Left, pars);
+                    var gtRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref gtLeft, ref gtRight);
+                    return Expression.GreaterThan(gtLeft, gtRight, liftToNull: ShouldLiftToNull(gtLeft, gtRight), method: null);
                 case SyntaxKind.GreaterThanOrEqualExpression:
-                    return Expression.GreaterThanOrEqual(Dispatcher(body.Left, pars), Dispatcher(body.Right, pars));
+                    var geLeft = Dispatcher(body.Left, pars);
+                    var geRight = Dispatcher(body.Right, pars);
+                    NormalizeNullableTypes(ref geLeft, ref geRight);
+                    return Expression.GreaterThanOrEqual(geLeft, geRight, liftToNull: ShouldLiftToNull(geLeft, geRight), method: null);
                 case SyntaxKind.CoalesceExpression:
                     var left_coalesce = Dispatcher(body.Left, pars);
                     var right_coalesce = Dispatcher(body.Right, pars);
+                    
+                    // Ensure left operand is nullable
+                    if (left_coalesce.Type.IsValueType && Nullable.GetUnderlyingType(left_coalesce.Type) == null)
+                    {
+                        var nullableType = typeof(Nullable<>).MakeGenericType(left_coalesce.Type);
+                        left_coalesce = Expression.Convert(left_coalesce, nullableType);
+                    }
+                    
+                    // Ensure right operand matches the underlying type of left or is nullable
+                    var leftUnderlyingType = Nullable.GetUnderlyingType(left_coalesce.Type) ?? left_coalesce.Type;
+                    if (right_coalesce.Type != left_coalesce.Type && right_coalesce.Type != leftUnderlyingType)
+                    {
+                        if (Nullable.GetUnderlyingType(left_coalesce.Type) != null && right_coalesce.Type.IsValueType && Nullable.GetUnderlyingType(right_coalesce.Type) == null)
+                        {
+                            // Right is non-nullable value type, ensure it matches the underlying type
+                            right_coalesce = Expression.Convert(right_coalesce, leftUnderlyingType);
+                        }
+                    }
+                    
                     return Expression.Coalesce(left_coalesce, right_coalesce);
                 case SyntaxKind.AsExpression:
                     //Expression.Convert();
@@ -213,10 +276,21 @@ namespace Linq.Eval
             {
                 case SyntaxKind.LogicalNotExpression:
                     return Expression.Not(Dispatcher(body.Operand, pars));
+                case SyntaxKind.UnaryMinusExpression:
+                    var operand = Dispatcher(body.Operand, pars);
+                    // Handle special case: -2147483648 is parsed as -(2147483648u)
+                    // Need to convert uint to int before negating
+                    if (operand.Type == typeof(uint))
+                    {
+                        operand = Expression.Convert(operand, typeof(long));
+                        return Expression.Convert(Expression.Negate(operand), typeof(int));
+                    }
+                    return Expression.Negate(operand);
+                case SyntaxKind.UnaryPlusExpression:
+                    return Expression.UnaryPlus(Dispatcher(body.Operand, pars));
                 default:
                     throw new NotImplementedException();
             }
-            throw new NotImplementedException();
         }
         static Expression? ConcatBody(ParenthesizedExpressionSyntax body, ParameterExpression[] pars = null, bool isMethodCall = false, ArgumentListSyntax args = null, Expression? member = null)
             => Dispatcher(body.Expression, pars, isMethodCall, args, member);
@@ -301,7 +375,11 @@ namespace Linq.Eval
             if (body.WhenNotNull is MemberBindingExpressionSyntax memberbinding)
                 notNull = Expression.Property(member, memberbinding.Name.Identifier.Text);
             else if (body.WhenNotNull is MemberAccessExpressionSyntax memberaccess && memberaccess.Expression is ElementBindingExpressionSyntax elementbinding)
-                notNull = Expression.ArrayAccess(member, Dispatcher(elementbinding.ArgumentList.Arguments[0].Expression, pars));
+            {
+                // Handle array access followed by property access: x.Students?[0].Age
+                var arrayAccess = Expression.ArrayAccess(member, Dispatcher(elementbinding.ArgumentList.Arguments[0].Expression, pars));
+                notNull = Expression.Property(arrayAccess, memberaccess.Name.Identifier.Text);
+            }
             else
                 notNull = Dispatcher(body.WhenNotNull, pars, member: member);
 
@@ -322,10 +400,17 @@ namespace Linq.Eval
             => pars.First(x => x.Name == body.Identifier.Text);
         static Expression? ConcatBody(ConditionalExpressionSyntax body, ParameterExpression[] pars = null)
         {
-
-            return Expression.Condition(Dispatcher(body.Condition, pars), Dispatcher(body.WhenTrue, pars), Dispatcher(body.WhenFalse, pars));
-
-            // TODO convert nullable or not???
+            var condition = Dispatcher(body.Condition, pars);
+            var whenTrue = Dispatcher(body.WhenTrue, pars);
+            var whenFalse = Dispatcher(body.WhenFalse, pars);
+            
+            // Ensure condition is bool, not bool?
+            if (condition.Type == typeof(bool?))
+            {
+                condition = Expression.Convert(condition, typeof(bool));
+            }
+            
+            return Expression.Condition(condition, whenTrue, whenFalse);
 
             //var condition = Dispatcher(body.Condition, pars);
             //var whentrue = Dispatcher(body.WhenTrue, pars);
@@ -460,5 +545,49 @@ namespace Linq.Eval
            {typeof(Nullable<bool>)   ,typeof(bool)   }   ,
            {typeof(Nullable<char>)   ,typeof(char)    }
         };
+
+        /// <summary>
+        /// Normalizes types for comparison operations by converting non-nullable to nullable when one side is nullable.
+        /// This ensures both operands have compatible types for comparison.
+        /// </summary>
+        private static void NormalizeNullableTypes(ref Expression left, ref Expression right)
+        {
+            if (left?.Type == null || right?.Type == null)
+                return;
+                
+            var leftUnderlyingType = Nullable.GetUnderlyingType(left.Type);
+            var rightUnderlyingType = Nullable.GetUnderlyingType(right.Type);
+            
+            // If one is nullable and the other is the underlying type, convert to nullable
+            if (leftUnderlyingType != null && rightUnderlyingType == null && leftUnderlyingType == right.Type)
+            {
+                // Right is the underlying type of left's nullable, convert right to nullable
+                right = Expression.Convert(right, left.Type);
+            }
+            else if (rightUnderlyingType != null && leftUnderlyingType == null && rightUnderlyingType == left.Type)
+            {
+                // Left is the underlying type of right's nullable, convert left to nullable
+                left = Expression.Convert(left, right.Type);
+            }
+        }
+
+        /// <summary>
+        /// Determines whether to lift null semantics for comparison operations.
+        /// Returns true if either operand is nullable to handle null comparisons correctly.
+        /// </summary>
+        private static bool ShouldLiftToNull(Expression left, Expression right)
+        {
+            var leftType = left?.Type;
+            var rightType = right?.Type;
+            
+            if (leftType == null || rightType == null)
+                return false;
+                
+            // Check if either type is nullable
+            bool leftIsNullable = Nullable.GetUnderlyingType(leftType) != null;
+            bool rightIsNullable = Nullable.GetUnderlyingType(rightType) != null;
+            
+            return leftIsNullable || rightIsNullable;
+        }
     }
 }

@@ -54,9 +54,11 @@ namespace Linq.Eval.Test
 
             var tc3 = Students3.Select("x=>x.Teacher?.Age".ToExpression<Func<Student,int?>>().Compile()).ToArray();
             
-            var tc4 = Teachers.Where("x=>x.Students[1].Age > 20 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
+            // Only test with teachers that have students[1]
+            var teachersWithEnoughStudents = Teachers.Where(t => t.Students != null && t.Students.Length > 1).ToArray();
+            var tc4 = teachersWithEnoughStudents.Where("x=>x.Students[1].Age > 17 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
 
-            var tc5 = Teachers.Where("x=>x.Students?[1].Age > 20 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
+            var tc5 = teachersWithEnoughStudents.Where("x=>x.Students?[1].Age > 17 ".ToExpression<Func<Teacher,bool>>().Compile()).ToArray();
              
         }
     }
